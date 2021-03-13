@@ -5,24 +5,46 @@ from tkinter.constants import *
 from tkinter import messagebox
 from functools import partial
 
+def swap(arr, i, j):
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+
 class GameBoard:
     def __init__(self, gui, size=(4,4)):
         self.gui = gui
         self.empty_num = size[0]*size[1]
-        print(self.empty_num)
         self.board = np.zeros(size).astype(np.uint8)
         self.__random_board_fill()
 
         self.move_count = 0
 
+    def __is_solvable(self, nums):
+        greater_sum = np.where(nums==self.empty_num)[0][0] // self.board.shape[1]
+        for i in range(nums.size):
+            if nums[i] != self.empty_num:
+                curr_sum = ((nums>nums[i])*(nums!=self.empty_num))[i:].sum()
+                greater_sum = (greater_sum + curr_sum) % 2
+
+        return (greater_sum % 2) == 0
+
+    def __make_solvable(self, nums):
+        if (nums[-1] != self.empty_num) and (nums[-2] != self.empty_num):
+            swap(nums, -1, -2)
+        else:
+            swap(nums, 0, 1)
+
     def __random_board_fill(self):
-        l = list(range(1, self.board.size + 1))
+        l = np.arange(1, self.board.size + 1).astype(np.uint32)
         random.shuffle(l)
+        if not self.__is_solvable(l):
+            self.__make_solvable(l)
+        if l[-1] == self.empty_num:
+            swap(l, -1, -2)
 
         for i in range(self.board.shape[0]):
             for j in range(self.board.shape[1]):
                 self.board[i,j] = l[i*self.board.shape[1] + j]
-                # self.board[i,j] = i*self.board.shape[1] + j + 1
 
     def get_board(self):
         return self.board
@@ -115,7 +137,7 @@ class Application(tk.Frame):
     def __init__(self, master=None):
         tk.Frame.__init__(self, master)
         self.pack(fill=BOTH, expand=1)
-        self.board_size = (2,2)
+        self.board_size = (4,4)
 
         self.game_board = GameBoard(self, self.board_size)
         self.createWidgets()
