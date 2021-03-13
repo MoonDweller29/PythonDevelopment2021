@@ -15,9 +15,16 @@ class GameBoard:
         self.gui = gui
         self.empty_num = size[0]*size[1]
         self.board = np.zeros(size).astype(np.uint8)
-        self.__random_board_fill()
+        self.__default_board_fill()
 
         self.move_count = 0
+
+    def __default_board_fill(self):
+        for i in range(self.board.shape[0]):
+            for j in range(self.board.shape[1]):
+                self.board[i,j] = i*self.board.shape[1] + j + 1
+
+        swap(self.board[-1], -1, -2)
 
     def __is_solvable(self, nums):
         greater_sum = np.where(nums==self.empty_num)[0][0] // self.board.shape[1]
