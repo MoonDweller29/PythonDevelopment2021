@@ -84,10 +84,15 @@ class GraphicsEditor(tk.Frame):
         self._canvas.coords(id, x0+offs_x, y0+offs_y, x1+offs_x, y1+offs_y)
         self._activeFigure = id, x, y
 
+    def clear(self):
+        self._canvas.delete("all")
+
 class TextEditor(tk.LabelFrame):
     def __init__(self, master=None, title="Text Editor"):
         super().__init__(master)
         self.config(text=title)
+
+    def _createWidgets(self):
         self.b = tk.Button(self, text='tex')
         self.b.grid()
 
@@ -106,8 +111,11 @@ class Application(tk.Frame):
     def createWidgets(self):
         self.textEditor = TextEditor(self, title="Text Editor EX")
         self.graphEditor = GraphicsEditor(self)
+        self.clearButton = tk.Button(self, text="Clear", command=self.graphEditor.clear)
         self.textEditor.grid(row=0, column=0, sticky="NWSE")
         self.graphEditor.grid(row=0, column=1, sticky="NWSE")
+        self.clearButton.grid(row=1, column=0, sticky="W")
+
 
 
 app = Application(title="Graph Editor")
