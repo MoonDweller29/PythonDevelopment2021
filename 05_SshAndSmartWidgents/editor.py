@@ -1,13 +1,14 @@
 import tkinter as tk
 from tkinter.constants import *
 from tkinter import colorchooser
+import re
 
 class GraphicsEditor(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
         self._fillColor = "#000000"
         self._outlineColor = "#000000"
-        self._outlineWidth = 1
+        self._outlineWidth = 0
         self._mousePushed = False
         self._figures = []
         self._activeFigure = None
@@ -43,6 +44,7 @@ class GraphicsEditor(tk.Frame):
         self._outlineColor = color_code[-1]
 
     def _mouseLeftButtonPress(self, event):
+        self.focus_set()
         self._mousePushed = True
         x, y = event.x, event.y
 
@@ -63,6 +65,7 @@ class GraphicsEditor(tk.Frame):
         self._mousePushed = False
         self._activeFigure = None
         self._mouseMoveAction = None
+        self._updateText()
 
     def _mouseMove(self, event):
         if not self._mousePushed:
@@ -71,6 +74,7 @@ class GraphicsEditor(tk.Frame):
             return
 
         self._mouseMoveAction(event.x, event.y)
+        self._updateText()
 
     def _resize(self, x, y):
         id, x_static, y_static = self._activeFigure
@@ -86,21 +90,119 @@ class GraphicsEditor(tk.Frame):
 
     def clear(self):
         self._canvas.delete("all")
+        self._figures = []
+
+    def _serializeFigure(self, id):
+        x0, y0, x1, y1 = self._canvas.coords(id)
+        outlineWidth = self._canvas.itemcget(id, "width")
+        outlineColor = self._canvas.itemcget(id, "outline")
+        fillColor = self._canvas.itemcget(id, "fill")
+        return f"<{x0} {y0} {x1} {y1}> {outlineWidth} {outlineColor} {fillColor}"
+
+    def _updateText(self):
+        serializedObjects = [self._serializeFigure(id) for id in self._figures]
+        self.master.updateText(serializedObjects)
+
+    def updateObjects(self, serializedObjects):
+        self.clear()
+        for obj in serializedObjects:
+            self._figures.append(self._canvas.create_oval(
+                obj['x0'], obj['y0'], obj['x1'], obj['y1'],
+                fill=obj['fillColor'],
+                outline=obj['outlineColor'],
+                width=obj['outlineWidth']))
+
 
 class TextEditor(tk.LabelFrame):
     def __init__(self, master=None, title="Text Editor"):
         super().__init__(master)
         self.config(text=title)
+        self._createWidgets()
+        self._tagErrors = "errors"
+        self._textWidget.tag_config(self._tagErrors, background="red")
+        self._updatedFromGraphics = False
 
     def _createWidgets(self):
-        self.b = tk.Button(self, text='tex')
-        self.b.grid()
+        self.grid_rowconfigure(0, weight=1, uniform="_")
+        self.grid_columnconfigure(0, weight=1, uniform="_")
+        self._textWidget = tk.Text(self, undo=True, wrap=tk.WORD, font="fixed",
+                inactiveselectbackground="MidnightBlue")
+        self._textWidget.grid(row=0, column=0, sticky="NWSE")
+        self._textWidget.bind('<<Modified>>', self._analyseText)
+
+    def clear(self):
+        self._textWidget.delete("1.0", tk.END)
+
+    def _loadLines(self):
+        return self._textWidget.get("1.0", tk.END).split('\n')
+
+    def _parseLine(self, line):
+        params = re.match(
+            r"<"                                          r"[\s]*"
+            r"(?P<x0>[+\-]?(\d+(\.\d+)?))"                r"[\s]+"
+            r"(?P<y0>[+\-]?(\d+(\.\d+)?))"                r"[\s]+"
+            r"(?P<x1>[+\-]?(\d+(\.\d+)?))"                r"[\s]+"
+            r"(?P<y1>[+\-]?(\d+(\.\d+)?))"                r"[\s]*"
+            r">"                                          r"[\s]*"
+            r"(?P<outlineWidth>[+\-]?(\d+(\.\d+)?))"      r"[\s]+"
+            r"(?P<outlineColor>#?\w+)"                    r"[\s]+"
+            r"(?P<fillColor>#?\w+)"                       r"[\s]*",
+            line
+        )
+        if params is None:
+            return None
+        params = params.groupdict()
+        try:
+            self.winfo_rgb(params['outlineColor'])
+            self.winfo_rgb(params['fillColor'])
+        except tk.TclError:
+            return None
+
+        params['x0'] = float(params['x0'])
+        params['y0'] = float(params['y0'])
+        params['x1'] = float(params['x1'])
+        params['y1'] = float(params['y1'])
+        params['outlineWidth'] = float(params['outlineWidth'])
+        return params
+
+    # <1 2 3 4> 10 #000000 #000000
+
+    def _analyseText(self, event):
+        if self._textWidget.edit_modified() == 0:
+            return
+        if self._updatedFromGraphics:
+            self._updatedFromGraphics = False
+            self._textWidget.edit_modified(False)
+            return
+
+        lines = self._loadLines()
+        serializedObjects = [self._parseLine(line) for line in lines if line != ""]
+        if not self._markErrorLines(serializedObjects):
+            self.master.updateGraphics(serializedObjects)
+
+        self._textWidget.edit_modified(False)
+
+    def _markErrorLines(self, serializedObjects):
+        self._textWidget.tag_remove(self._tagErrors, "1.0", tk.END)
+        serializedObjects = enumerate(serializedObjects)
+        errorLinesInds = [i + 1 for i, obj in serializedObjects if obj is None]
+        for i in errorLinesInds:
+            self._textWidget.tag_add(self._tagErrors, f"{i}.0", f"{i}.end")
+
+        return len(errorLinesInds) != 0
+
+    def updateText(self, serializedObjects):
+        self.clear()
+        text = "\n".join(serializedObjects)
+        self._updatedFromGraphics = True
+        self._textWidget.insert("1.0", text)
 
 class Application(tk.Frame):
     def __init__(self, master=None, title="<application>"):
         super().__init__(master)
         self.master.title(title)
         self.grid(sticky="NWSE")
+        self.bind("<Button-1>", lambda event: self.focus_set())
         self.master.grid_rowconfigure(0, weight=1)
         self.master.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1, uniform="_")
@@ -109,13 +211,22 @@ class Application(tk.Frame):
         self.createWidgets()
 
     def createWidgets(self):
-        self.textEditor = TextEditor(self, title="Text Editor EX")
+        self.textEditor = TextEditor(self, title="Text Editor")
         self.graphEditor = GraphicsEditor(self)
-        self.clearButton = tk.Button(self, text="Clear", command=self.graphEditor.clear)
+        self.clearButton = tk.Button(self, text="Clear", command=self.clear)
         self.textEditor.grid(row=0, column=0, sticky="NWSE")
         self.graphEditor.grid(row=0, column=1, sticky="NWSE")
         self.clearButton.grid(row=1, column=0, sticky="W")
 
+    def clear(self):
+        self.textEditor.clear()
+        self.graphEditor.clear()
+
+    def updateText(self, serializedObjects):
+        self.textEditor.updateText(serializedObjects)
+
+    def updateGraphics(self, serializedObjects):
+        self.graphEditor.updateObjects(serializedObjects)
 
 
 app = Application(title="Graph Editor")
